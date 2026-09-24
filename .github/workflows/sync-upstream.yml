@@ -1,0 +1,69 @@
+name: Sync upstream main
+
+on:
+  schedule:
+    # UTC; 北京时间每天 02:17、08:17、14:17、20:17。
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main-fork
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'AlcoholTobaccoCode/dsh-ios' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FORK_REPO: AlcoholTobaccoCode/dsh-ios
+      UPSTREAM_REPO: ZSeven-W/dsh-ios
+      SYNC_TRIGGER: ${{ github.event_name }}
+      SYNC_ACTOR: ${{ github.actor }}
+    steps:
+      - name: Fast-forward main-fork from upstream main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # GitHub 的同步 API 使用父仓库默认分支，先确认它仍然是约定的 main。
+          parent=$(gh api "repos/$FORK_REPO" --jq '.parent.full_name')
+          upstream_default=$(gh api "repos/$UPSTREAM_REPO" --jq '.default_branch')
+          if [[ "$parent" != "$UPSTREAM_REPO" || "$upstream_default" != main ]]; then
+            echo '::error::Fork parent or upstream default branch changed; review the sync configuration.'
+            exit 1
+          fi
+
+          upstream_sha=$(gh api "repos/$UPSTREAM_REPO/git/ref/heads/main" --jq '.object.sha')
+          before_sha=$(gh api "repos/$FORK_REPO/git/ref/heads/main-fork" --jq '.object.sha')
+          comparison=$(gh api "repos/$FORK_REPO/compare/$before_sha...$upstream_sha" --jq '.status')
+
+          {
+            printf '%s\n' '# Upstream sync' "Trigger: $SYNC_TRIGGER; actor: $SYNC_ACTOR"
+            printf '%s\n' "Source: $UPSTREAM_REPO/main at $upstream_sha"
+            printf '%s\n' "Target: $FORK_REPO/main-fork at $before_sha" "Comparison: $comparison"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # main-fork 仅保存上游历史；有本地提交或分叉时拒绝自动合并和覆盖。
+          case "$comparison" in
+            identical|ahead) ;;
+            *)
+              echo '::error::main-fork has commits outside upstream main; manual review is required.'
+              exit 1
+              ;;
+          esac
+
+          gh api --method POST "repos/$FORK_REPO/merge-upstream" -f branch=main-fork
+
+          after_sha=$(gh api "repos/$FORK_REPO/git/ref/heads/main-fork" --jq '.object.sha')
+          latest_upstream_sha=$(gh api "repos/$UPSTREAM_REPO/git/ref/heads/main" --jq '.object.sha')
+          printf '%s\n' "Result: main-fork at $after_sha" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$after_sha" != "$latest_upstream_sha" ]]; then
+            echo '::error::main-fork does not match upstream main; inspect the refs and rerun.'
+            exit 1
+          fi
+          printf '%s\n' 'Verified: main-fork matches upstream main. Development main was not a sync target.' >> "$GITHUB_STEP_SUMMARY"
