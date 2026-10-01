@@ -1,0 +1,18 @@
+{
+  "name": "@alcoholtobaccocode/ios-driver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Host-independent iOS driver extracted from ZSeven-W/dsh-ios",
+  "license": "MIT",
+  "engines": { "node": ">=24.11.0" },
+  "exports": {
+    ".": { "types": "./lib/qa-driver.d.ts", "default": "./lib/qa-driver.js" },
+    "./sim-host": { "types": "./lib/sim-host.d.ts", "default": "./lib/sim-host.js" },
+    "./ocr": { "types": "./lib/ocr-backend.d.ts", "default": "./lib/ocr-backend.js" }
+  },
+  "files": ["lib", "assets", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md"],
+  "scripts": { "build": "node build.mjs", "prepack": "npm run build" },
+  "dependencies": { "serve-sim": "0.1.46", "ws": "8.21.0" },
+  "devDependencies": { "@types/node": "^26.2.0", "typescript": "^6.0.3" }
+}
